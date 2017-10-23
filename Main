@@ -1,0 +1,39 @@
+Public Sub start()
+    Sheets("UI").Range("B15:B17") = ""
+    Sheets("UI").Range("B15") = "Computing Filterbanks"
+    filterbanks = DSP.compute_filter(44100, 26)
+    Call IO.outFilterbanks(filterbanks, 26, 1024, "MFCC Filterbanks")
+    
+    i = 1
+    Do While Not IsEmpty(Sheets("Training Data").Cells(1, i))
+        ReDim audata(1) As New Speech
+        audata = IO.fetch_data(i)
+        Sheets("UI").Range("B15") = "Processing Signal: " & i
+        Sheets("UI").Range("B16") = "Framing"
+        signal = audata(0).signal
+        nframes = audata(0).nframes
+        frameSize = audata(0).frameSize
+        audata(0).frames = Prep.frameSignal(signal, nframes, frameSize)
+        
+        Sheets("UI").Range("B16") = "Performing FFT"
+        frames = audata(0).frames
+        audata(0).ffts = DSP.ffts(frames, nframes)
+        
+        Sheets("UI").Range("B16") = "Computing Periodogram Power Estimate"
+        fftss = audata(0).ffts
+        audata(0).periodograms = DSP.periodogram(fftss, nframes, 1024)
+        
+        Sheets("UI").Range("B16") = "Computing MFCC"
+        Sheets("UI").Range("B17") = "Data: " & i
+        p = audata(0).periodograms
+        nframes = audata(0).nframes
+        mfcc = apply_filters(filterbanks, p, 26, 1024, nframes)
+        audata(0).mfcc = mfcc
+        
+        i = i + 1
+    Loop
+    
+    Sheets("UI").Range("B15:B17") = "Done!"
+    Sheets("UI").Range("B15:B17") = ""
+End Sub
+
