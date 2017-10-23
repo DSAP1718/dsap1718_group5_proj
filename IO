@@ -1,0 +1,143 @@
+Function ffts(frames, nframes) As Variant
+    fftBit = 1024
+    ReDim tmpFFTS(nframes, fftBit - 1) As Variant
+    ReDim tempSig(fftBit - 1) As Variant
+    For i = 0 To nframes - 1
+        Sheets("UI").Range("B17") = "Frame: " & i & " of " & nframes
+        For n = 0 To fftBit - 1
+            tempSig(n) = frames(i, n)
+        Next n
+        tempFFT = fft(tempSig)
+        For k = 0 To fftBit - 1
+            tmpFFTS(i, k) = tempFFT(k)
+        Next k
+    Next i
+    ffts = tmpFFTS
+End Function
+            
+
+Function fft(s) As Variant
+    ReDim Even(UBound(s) \ 2), Odd(UBound(s) \ 2) As Variant
+    For i = LBound(s) To UBound(s) Step 2
+        Even(i \ 2) = s(i)
+        Odd(i \ 2) = s(i + 1)
+    Next i
+    If UBound(s) > 1 Then
+        Even = fft(Even)
+        Odd = fft(Odd)
+    End If
+    ReDim y(UBound(s)) As Variant
+    For i = 0 To UBound(y) \ 2
+        twiddlef = WorksheetFunction.ImAbs(WorksheetFunction.Complex(Cos(2 * WorksheetFunction.Pi() * i / (UBound(s) + 1)), Sin(2 * WorksheetFunction.Pi() * i / (UBound(s) + 1))))
+        y(i) = Even(i) + Odd(i) * twiddlef
+        y((i + UBound(y) \ 2 + 1)) = Even(i) - Odd(i) * twiddlef
+    Next i
+    fft = y
+End Function
+    
+    
+Function periodogram(frameFFT, nframes, frameSize) As Variant
+    ReDim perdgm(nframes, frameSize) As Variant
+    For i = 0 To nframes - 1
+        For k = 0 To frameSize - 1
+            perdgm(i, k) = frameFFT(i, k) ^ 2 / frameSize
+        Next k
+    Next i
+    periodogram = perdgm
+End Function
+
+Function compute_filter(sampRate, nfilters) As Variant
+    lower_freq = 300
+    upper_freq = sampRate \ 2
+    lower_mel = 1125 * WorksheetFunction.Ln(1 + lower_freq / 700)
+    upper_mel = 1125 * WorksheetFunction.Ln(1 + upper_freq / 700)
+    
+    ReDim mel(nfilters + 1) As Variant
+    ReDim h(nfilters + 1) As Variant
+    Spacing = (upper_mel - lower_mel) / (nfilters + 1)
+    mel(0) = lower_mel
+    h(0) = 700 * (Exp(mel(0) / 1125) - 1)
+    For i = 1 To UBound(mel)
+        mel(i) = mel(i - 1) + Spacing
+        h(i) = 700 * (Exp(mel(i) / 1125) - 1)
+    Next i
+    
+    ReDim f(nfilters + 1) As Variant
+    nfft = 1024
+    For i = 0 To UBound(f)
+        f(i) = Int((nfft + 1) * h(i) / sampRate)
+    Next i
+    
+    nfft = 1024
+    ReDim fb(nfilters - 1, f(UBound(f)) - 1) As Variant
+    For m = 1 To nfilters
+        For k = 1 To f(UBound(f))
+            If k < f(m - 1) Then
+                fb(m - 1, k - 1) = 0
+            ElseIf k >= f(m - 1) And k <= f(m) Then
+                fb(m - 1, k - 1) = (k - f(m - 1)) / (f(m) - f(m - 1))
+            ElseIf k >= f(m) And k <= f(m + 1) Then
+                fb(m - 1, k - 1) = (f(m + 1) - k) / (f(m + 1) - f(m))
+            ElseIf k > f(m + 1) Then
+                fb(m - 1, k - 1) = 0
+            End If
+        Next k
+    Next m
+    
+    compute_filter = fb
+    
+End Function
+
+Function apply_filters(filterbanks, periodograms, nfilters, nfft, nframes) As Variant
+    ReDim mfcc(nframes - 1, nfilters - 1) As Variant
+    For i = 0 To nframes - 1
+        Sheets("UI").Range("B17") = "Applying Filter on Frame: " & i & " of " & nframes
+        ReDim fpdg(nfft \ 2 - 1)
+        For k = 0 To nfft \ 2 - 1
+            fpdg(k) = periodograms(i, k)
+        Next k
+        fp = apply_filter(filterbanks, fpdg, nfilters, nfft)
+        For k = 0 To nfilters - 1
+            mfcc(i, k) = fp(k)
+            If Not mfcc(i, k) = 0 Then
+                mfcc(i, k) = Math.Log(mfcc(i, k))
+            End If
+        Next k
+    Next i
+    
+    For i = 1 To nfilters
+        For m = 1 To nfft \ 2
+            Sheets("MFCC").Cells(m, i) = Sheets("MFCC").Cells(m, i).Value / nframes
+        Next m
+    Next i
+    apply_filters = mfcc
+End Function
+
+Function apply_filter(filterbanks, periodogram, nfilters, nfft) As Variant
+    ReDim fp(nfilters - 1, nfft \ 2 - 1) As Variant
+    ReDim coefs(nfilters - 1) As Variant
+    For m = 0 To nfilters - 1
+        
+        ReDim signal(nfft \ 2) As Variant
+        coef = 0
+        For k = 0 To nfft \ 2 - 1
+            fp(m, k) = filterbanks(m, k) * periodogram(k)
+            coef = coef + fp(m, k)
+            signal(k) = fp(m, k)
+        Next k
+        coefs(m) = coef
+        
+        d = dct(signal, nfft \ 2, m + 1)
+        
+    Next m
+    apply_filter = coefs
+End Function
+
+Function dct(signal, sigLen, col) As Variant
+    For i = 0 To sigLen - 1
+        d = Math.Cos(Pi / sigLen * (i) + 0.5) * i * signal(i)
+        If col <= 13 Then
+            Sheets("MFCC").Cells(i + 1, col) = Sheets("MFCC").Cells(i + 1, col).Value + d
+        End If
+    Next i
+End Function
