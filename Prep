@@ -1,0 +1,17 @@
+Public Function frameSignal(signal, nframes, frameSize) As Variant
+    ReDim framedSig(nframes, frameSize) As Variant
+    j = 1
+    For i = 0 To nframes - 1
+        For n = 1 To frameSize
+            If j <= UBound(signal) Then
+                framedSig(i, n) = signal(j)
+            Else
+                framedSig(i, n) = 0
+            End If
+            j = j + 1
+        Next n
+        j = j \ 2
+    Next i
+    frameSignal = framedSig
+End Function
+
